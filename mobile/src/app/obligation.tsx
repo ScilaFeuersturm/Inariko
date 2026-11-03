@@ -32,7 +32,7 @@ type FormState = {
   notes: string;
   scannedImageUri: string | null;
   isEditing: boolean;
-  /** Se conservan al editar para no "despagar" una factura ya pagada. */
+  /** Estado de pago: permite editar si la factura sigue pendiente (a pagar) o si ya fue pagada. */
   isPaid: boolean;
   paidDate: number | null;
   /** Plan familiar: si se comparte con el grupo, y quién la cargó (al editar). */
@@ -203,6 +203,22 @@ export default function ObligationFormScreen() {
               />
             ))}
           </ChipRow>
+        </View>
+      </View>
+
+      <View>
+        <Text variant="labelLarge">Estado</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+          <Chip
+            label="Pendiente (a pagar)"
+            selected={!form.isPaid}
+            onPress={() => update({ isPaid: false, paidDate: null })}
+          />
+          <Chip
+            label="Pagado"
+            selected={form.isPaid}
+            onPress={() => update({ isPaid: true, paidDate: form.paidDate ?? today() })}
+          />
         </View>
       </View>
 

@@ -119,7 +119,7 @@ function BalanceHero({ state, currency }: { state: DashboardState; currency: key
     state.vencidosCount > 0
       ? `${state.vencidosCount} vencidas`
       : state.totalIncome > 0
-        ? `${Math.max(0, Math.trunc((state.pendingThisMonth * 100) / state.totalIncome))}% comprometido`
+        ? `${state.committedPercent}% comprometido`
         : null;
   return (
     <HeroCard>
@@ -192,7 +192,17 @@ function RecentActivity({ payments }: { payments: PaymentHistoryEntry[] }) {
       {payments.map((payment, index) => (
         <View key={payment.id}>
           {index > 0 && <Divider />}
-          <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16 }}>
+          <Pressable
+            onPress={() => router.push({ pathname: '/obligation', params: { id: String(payment.obligationId) } })}
+            accessibilityRole="button"
+            accessibilityHint="Abre el detalle del pago para editarlo o cambiar su estado"
+            style={({ pressed }) => ({
+              flexDirection: 'row',
+              alignItems: 'center',
+              padding: 16,
+              opacity: pressed ? 0.85 : 1,
+            })}
+          >
             <IconBox icon={CATEGORIES[payment.category].icon} size={40} />
             <View style={{ flex: 1, paddingHorizontal: 12 }}>
               <Text variant="titleSmall" numberOfLines={2}>
@@ -208,7 +218,7 @@ function RecentActivity({ payments }: { payments: PaymentHistoryEntry[] }) {
               </Text>
               <Tag text="Pagado" />
             </View>
-          </View>
+          </Pressable>
         </View>
       ))}
     </Card>

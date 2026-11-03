@@ -271,13 +271,51 @@ export type ObligationInput = {
 /**
  * Crea la obligación, o la reemplaza si `id` ya existe. Una factura compartida que cargó otra persona
  * se puede editar, pero sigue siendo suya y solo ella decide si deja de compartirla.
+ * Si al editar cambia el estado entre pagado y pendiente, sincroniza también el historial de pagos
+ * y la próxima cuota recurrente.
  */
 export async function saveObligation(input: ObligationInput): Promise<void> {
+  const db = getDb();
   const existing = input.id ? await getObligation(input.id) : null;
   const me = requireUserId();
   const owner = existing?.userId ?? me;
   const householdId = owner === me ? input.householdId : (existing?.householdId ?? null);
-  await writeObligation({ ...input, householdId }, owner, existing?.createdAt ?? today());
+  const id = input.id || randomUUID();
+  const isPaid = input.isPaid;
+  const paidDate = isPaid ? (input.paidDate ?? today()) : null;
+  const createdOn = existing?.createdAt ?? today();
+  const now = Date.now();
+
+  await db.withTransactionAsync(async () => {
+    await writeObligation({ ...input, id, isPaid, paidDate, householdId }, owner, createdOn);
+    if (existing?.isPaid && !isPaid) {
+      await revertPaymentSideEffects(existing, now);
+    } else if (!existing?.isPaid && isPaid) {
+      await db.runAsync(
+        `INSERT INTO payment_history
+          (id, user_id, obligation_id, obligation_name, category, amount, currency, paid_date, household_id,
+           updated_at, deleted, dirty)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)`,
+        randomUUID(), me, id, input.name, input.category, input.amount,
+        input.currency, paidDate, householdId, now,
+      );
+      if (input.isRecurring && existing != null) {
+        await writeObligation(
+          {
+            ...input,
+            id: undefined,
+            dueDate: plusMonths(input.dueDate, 1),
+            isPaid: false,
+            paidDate: null,
+            createdFromOcr: false,
+            householdId,
+          },
+          me,
+          createdOn,
+        );
+      }
+    }
+  });
   afterLocalWrite();
 }
 
@@ -291,6 +329,29 @@ async function writeObligation(input: ObligationInput, userId: string, createdOn
     input.category, input.isRecurring ? 1 : 0, input.isPaid ? 1 : 0, input.paidDate, input.notes,
     input.createdFromOcr ? 1 : 0, createdOn, input.householdId, Date.now(),
   );
+}
+
+async function revertPaymentSideEffects(obligation: Obligation, now: number): Promise<void> {
+  const db = getDb();
+  await db.runAsync(
+    'UPDATE payment_history SET deleted = 1, updated_at = ?, dirty = 1 WHERE obligation_id = ? AND deleted = 0',
+    now, obligation.id,
+  );
+  if (obligation.isRecurring) {
+    const nextDue = plusMonths(obligation.dueDate, 1);
+    const nextRow = await db.getFirstAsync<{ id: string }>(
+      `SELECT id FROM obligations
+       WHERE id != ? AND name = ? AND category = ? AND due_date = ? AND is_paid = 0 AND deleted = 0
+       ORDER BY updated_at DESC LIMIT 1`,
+      obligation.id, obligation.name, obligation.category, nextDue,
+    );
+    if (nextRow) {
+      await db.runAsync(
+        'UPDATE obligations SET deleted = 1, updated_at = ?, dirty = 1 WHERE id = ?',
+        now, nextRow.id,
+      );
+    }
+  }
 }
 
 /** Solo quien cargó la factura puede borrarla (aunque esté compartida). */
@@ -343,6 +404,23 @@ export async function markAsPaid(obligation: Obligation, paidDate: number = toda
         obligation.createdAt,
       );
     }
+  });
+  afterLocalWrite();
+}
+
+/**
+ * Vuelve una obligación pagada al estado pendiente ("por pagar"), dando de baja su registro
+ * en el historial de pagos y, si era recurrente, la cuota futura generada automáticamente.
+ */
+export async function markAsUnpaid(obligation: Obligation): Promise<void> {
+  const db = getDb();
+  const now = Date.now();
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      'UPDATE obligations SET is_paid = 0, paid_date = NULL, updated_at = ?, dirty = 1 WHERE id = ?',
+      now, obligation.id,
+    );
+    await revertPaymentSideEffects(obligation, now);
   });
   afterLocalWrite();
 }

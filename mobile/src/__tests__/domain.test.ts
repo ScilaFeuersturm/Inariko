@@ -85,8 +85,29 @@ describe('cálculos de pantallas', () => {
     expect(state.vencidosCount).toBe(1);
     expect(state.proximosCount).toBe(1);
     expect(state.pendingThisMonth).toBe(500_000);
+    expect(state.committedThisMonth).toBe(500_000);
+    expect(state.committedPercent).toBe(50);
     expect(state.availableBalance).toBe(500_000);
     expect(state.isOverBudget).toBe(false);
+  });
+
+  test('inicio: al marcar un gasto como pagado persiste como dinero comprometido del mes', () => {
+    const state = dashboardState(
+      data({
+        incomes,
+        obligations: [
+          obligation({ id: 'o1', dueDate: TODAY + 2, amount: 400_000, isPaid: true, paidDate: TODAY }),
+          obligation({ id: 'o2', dueDate: TODAY + 5, amount: 100_000, isPaid: false }),
+        ],
+      }),
+      TODAY,
+    );
+    expect(state.pendingThisMonth).toBe(100_000);
+    expect(state.paidThisMonth).toBe(400_000);
+    expect(state.committedThisMonth).toBe(500_000);
+    expect(state.committedPercent).toBe(50);
+    expect(state.availableBalance).toBe(500_000);
+    expect(state.paidThisMonthPercent).toBe(80);
   });
 
   test('ahorro: reparte el ingreso según el modelo', () => {

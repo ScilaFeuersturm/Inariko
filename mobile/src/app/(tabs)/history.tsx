@@ -246,9 +246,19 @@ function PaymentHistoryCard({ state, month }: { state: ReportsState; month: Year
 
       <View style={{ marginTop: 12, gap: 10 }}>
         {state.payments.map((entry) => (
-          <View
+          <Pressable
             key={entry.id}
-            style={{ flexDirection: 'row', alignItems: 'center', borderRadius: 12, backgroundColor: colors.surfaceVariant, padding: 12 }}
+            onPress={() => router.push({ pathname: '/obligation', params: { id: String(entry.obligationId) } })}
+            accessibilityRole="button"
+            accessibilityHint="Abre el detalle del pago para editarlo o cambiar su estado"
+            style={({ pressed }) => ({
+              flexDirection: 'row',
+              alignItems: 'center',
+              borderRadius: 12,
+              backgroundColor: colors.surfaceVariant,
+              padding: 12,
+              opacity: pressed ? 0.85 : 1,
+            })}
           >
             <IconBox icon={CATEGORIES[entry.category].icon} container={colors.primaryContainer} size={40} />
             <View style={{ flex: 1, paddingHorizontal: 12 }}>
@@ -262,7 +272,7 @@ function PaymentHistoryCard({ state, month }: { state: ReportsState; month: Year
             <Text variant="titleSmall" weight="bold">
               {formatMoney(entry.amount, entry.currency)}
             </Text>
-          </View>
+          </Pressable>
         ))}
       </View>
     </Card>

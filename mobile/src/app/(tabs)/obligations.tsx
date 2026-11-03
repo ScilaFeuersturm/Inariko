@@ -6,7 +6,7 @@ import { Currencies } from '@/domain/currency';
 import { currentYearMonth, longEs, today } from '@/domain/dates';
 import { formatAmount, formatMoney } from '@/domain/format';
 import { dueLabel, obligationStatus } from '@/domain/models';
-import { markAsPaid } from '@/data/repository';
+import { markAsPaid, markAsUnpaid } from '@/data/repository';
 import { OBLIGATION_FILTERS, obligationsState, type ObligationFilter, type ObligationsState } from '@/features/selectors';
 import { useAppData } from '@/state/AppDataProvider';
 import { ChipRow } from '@/ui/form';
@@ -45,6 +45,7 @@ export default function ObligationsListScreen() {
           status={status}
           onPress={() => router.push({ pathname: '/obligation', params: { id: String(obligation.id) } })}
           onMarkPaid={() => void markAsPaid(obligation)}
+          onMarkUnpaid={() => void markAsUnpaid(obligation)}
           converter={data.converter}
         />
       ))}

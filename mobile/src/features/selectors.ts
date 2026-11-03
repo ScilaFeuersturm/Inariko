@@ -61,6 +61,12 @@ export type DashboardState = {
   totalIncome: number;
   totalPending: number;
   pendingThisMonth: number;
+  /** Total de obligaciones de este mes (o pagadas este mes) que ya fueron marcadas como pagadas. */
+  paidThisMonth: number;
+  /** Dinero comprometido del mes: lo pendiente del mes (incluyendo vencidas) más lo ya pagado este mes. */
+  committedThisMonth: number;
+  /** Porcentaje del ingreso mensual comprometido en gastos del mes (pagados + pendientes). */
+  committedPercent: number;
   vencidosCount: number;
   proximosCount: number;
   alDiaCount: number;
@@ -72,7 +78,7 @@ export type DashboardState = {
   /** Porcentaje (0-100) del monto de obligaciones de este mes que ya está pagado. */
   paidThisMonthPercent: number;
   recentPayments: PaymentHistoryEntry[];
-  /** Lo que queda del ingreso mensual después de cubrir lo pendiente del mes. */
+  /** Lo que queda del ingreso mensual después de cubrir los gastos comprometidos del mes (pagados y pendientes). */
   availableBalance: number;
 };
 
@@ -87,25 +93,41 @@ export function dashboardState(data: UserData, today: EpochDay = todayFn()): Das
   const pendingThisMonth = converter.sumOf(
     unpaid.filter((o) => sameYearMonth(o.dueDate, currentMonth) || statusOf(o) === 'VENCIDO'),
   );
-  const thisMonth = obligations.filter((o) => sameYearMonth(o.dueDate, currentMonth));
-  const thisMonthTotal = converter.sumOf(thisMonth);
-  const thisMonthPaid = converter.sumOf(thisMonth.filter((o) => o.isPaid));
+  const paidObligationsThisMonth = obligations.filter(
+    (o) =>
+      o.isPaid &&
+      (sameYearMonth(o.dueDate, currentMonth) ||
+        (o.paidDate != null ? sameYearMonth(o.paidDate, currentMonth) : statusOf(o) === 'VENCIDO')),
+  );
+  const activeObligationIds = new Set(obligations.map((o) => o.id));
+  const orphanPaymentsThisMonth = history.filter(
+    (h) => sameYearMonth(h.paidDate, currentMonth) && !activeObligationIds.has(h.obligationId),
+  );
+  const paidThisMonth = converter.sumOf(paidObligationsThisMonth) + converter.sumOf(orphanPaymentsThisMonth);
+  const committedThisMonth = pendingThisMonth + paidThisMonth;
+  const committedPercent =
+    totalIncome <= 0 || committedThisMonth <= 0
+      ? 0
+      : Math.max(1, Math.trunc((committedThisMonth * 100) / totalIncome));
 
   return {
     userHasData: obligations.length > 0 || incomes.length > 0,
     totalIncome,
     totalPending: converter.sumOf(unpaid),
     pendingThisMonth,
+    paidThisMonth,
+    committedThisMonth,
+    committedPercent,
     vencidosCount: unpaid.filter((o) => statusOf(o) === 'VENCIDO').length,
     proximosCount: unpaid.filter((o) => ['HOY', 'PROXIMO'].includes(statusOf(o))).length,
     alDiaCount: unpaid.filter((o) => statusOf(o) === 'AL_DIA').length,
-    isOverBudget: totalIncome > 0 && pendingThisMonth > totalIncome,
-    overBudgetAmount: Math.max(0, pendingThisMonth - totalIncome),
+    isOverBudget: totalIncome > 0 && committedThisMonth > totalIncome,
+    overBudgetAmount: Math.max(0, committedThisMonth - totalIncome),
     upcoming: [...unpaid].sort((a, b) => a.dueDate - b.dueDate).slice(0, 6),
     dueThisWeekCount: unpaid.filter((o) => o.dueDate <= today + 7).length,
-    paidThisMonthPercent: thisMonthTotal === 0 ? 0 : Math.trunc((thisMonthPaid * 100) / thisMonthTotal),
+    paidThisMonthPercent: committedThisMonth === 0 ? 0 : Math.trunc((paidThisMonth * 100) / committedThisMonth),
     recentPayments: [...history].sort((a, b) => b.paidDate - a.paidDate).slice(0, 3),
-    availableBalance: totalIncome - pendingThisMonth,
+    availableBalance: totalIncome - committedThisMonth,
   };
 }
 

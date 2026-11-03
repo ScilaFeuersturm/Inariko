@@ -29,6 +29,7 @@ export function ObligationCard({
   status,
   onPress,
   onMarkPaid,
+  onMarkUnpaid,
   converter,
   emphasized,
 }: {
@@ -36,6 +37,7 @@ export function ObligationCard({
   status: ObligationStatus;
   onPress: () => void;
   onMarkPaid: () => void;
+  onMarkUnpaid?: () => void;
   converter?: CurrencyConverter;
   emphasized?: boolean;
 }) {
@@ -108,6 +110,17 @@ export function ObligationCard({
             <Text variant="labelMedium" color={colors.onSurfaceVariant} style={{ flexGrow: 1, flexShrink: 1, minWidth: '50%' }}>
               {obligation.isRecurring ? 'Se repite cada mes' : 'Pago único'}
             </Text>
+            {onMarkUnpaid && (
+              <TonalButton
+                text="Pasar a pendiente"
+                icon="undo"
+                onPress={onMarkUnpaid}
+                compact
+                container={colors.surfaceVariant}
+                contentColor={colors.onSurfaceVariant}
+                accessibilityLabel={`Marcar ${obligation.name} como pendiente`}
+              />
+            )}
             <Stamp text="Pagada" detail={shortEs(obligation.paidDate ?? obligation.dueDate)} color={palette.bar} />
           </>
         ) : (
