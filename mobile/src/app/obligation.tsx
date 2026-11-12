@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { Keyboard, View } from 'react-native';
 
 import { Currencies, type CurrencyCode } from '@/domain/currency';
-import { numericEs, today } from '@/domain/dates';
+import { numericEs, sameYearMonth, today, yearMonthOf } from '@/domain/dates';
 import { parseAmount, sanitizeAmountInput, toAmountInput } from '@/domain/format';
 import { CATEGORIES, CATEGORY_KEYS, type ObligationCategory } from '@/domain/models';
 import { deleteObligation, getObligation, saveObligation } from '@/data/repository';
@@ -50,13 +50,15 @@ export default function ObligationFormScreen() {
 
   const [form, setForm] = useState<FormState>(() => {
     // Una factura nueva arranca en la moneda de visualización del usuario.
+    const now = today();
+    const defaultDue = sameYearMonth(now + 5, yearMonthOf(now)) ? now + 5 : now;
     const base: FormState = {
       id: '',
       name: '',
       reference: '',
       amountText: '',
       currency: plan.displayCurrency,
-      dueDate: today() + 7,
+      dueDate: defaultDue,
       category: 'SERVICIOS',
       isRecurring: true,
       notes: '',

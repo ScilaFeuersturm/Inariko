@@ -22,7 +22,7 @@ export default function ObligationsListScreen() {
 
   return (
     <ScrollView contentContainerStyle={{ padding: ScreenPadding, gap: 16 }}>
-      <CycleHero state={state} target={data.converter.target} />
+      <CycleHero state={state} target={data.converter.target} reminderDays={data.plan.reminderDaysBefore} />
 
       <ScanCard onScan={() => router.push('/scan')} />
 
@@ -72,7 +72,15 @@ export default function ObligationsListScreen() {
   );
 }
 
-function CycleHero({ state, target }: { state: ObligationsState; target: keyof typeof Currencies }) {
+function CycleHero({
+  state,
+  target,
+  reminderDays,
+}: {
+  state: ObligationsState;
+  target: keyof typeof Currencies;
+  reminderDays: number;
+}) {
   const next = state.nextDue;
   return (
     <HeroCard>
@@ -97,7 +105,7 @@ function CycleHero({ state, target }: { state: ObligationsState; target: keyof t
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <Dot color={Hero.highlight} />
           <Text variant="labelMedium" color={Hero.onColor} numberOfLines={2} style={{ flex: 1, marginHorizontal: 8 }}>
-            {`Próximo: ${next.name}, ${dueLabel(next.dueDate, obligationStatus(next.dueDate, false, today()), today()).toLowerCase()}`}
+            {`Próximo: ${next.name}, ${dueLabel(next.dueDate, obligationStatus(next.dueDate, false, today(), reminderDays), today()).toLowerCase()}`}
           </Text>
           <Text variant="labelMedium" color={Hero.onColorMuted}>
             {formatMoney(next.amount, next.currency)}

@@ -111,7 +111,7 @@ export function obligationStatus(
   dueDate: EpochDay,
   isPaid: boolean,
   today: EpochDay,
-  proximoUmbralDias = 7,
+  proximoUmbralDias = DEFAULT_REMINDER_DAYS,
 ): ObligationStatus {
   if (isPaid) return 'PAGADO';
   const diasHastaVencimiento = dueDate - today;

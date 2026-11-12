@@ -1,7 +1,7 @@
 import { CurrencyConverter } from '@/domain/currency';
 import { epochDayOf, plusMonths, shortEs, toParts } from '@/domain/dates';
 import { defaultBudgetPlan, dueLabel, obligationStatus, type Obligation } from '@/domain/models';
-import { budgetState, dashboardState, remindersFor, reportsState, type UserData } from '@/features/selectors';
+import { budgetState, dashboardState, obligationsState, remindersFor, reportsState, type UserData } from '@/features/selectors';
 import { parseInvoiceText } from '@/ocr/invoiceParser';
 
 const TODAY = epochDayOf(2026, 10, 9);
@@ -51,11 +51,11 @@ describe('fechas', () => {
 });
 
 describe('estado de obligaciones', () => {
-  test('calcula el estado según el vencimiento', () => {
+  test('calcula el estado según el vencimiento (5 días por defecto)', () => {
     expect(obligationStatus(TODAY - 1, false, TODAY)).toBe('VENCIDO');
     expect(obligationStatus(TODAY, false, TODAY)).toBe('HOY');
-    expect(obligationStatus(TODAY + 7, false, TODAY)).toBe('PROXIMO');
-    expect(obligationStatus(TODAY + 8, false, TODAY)).toBe('AL_DIA');
+    expect(obligationStatus(TODAY + 5, false, TODAY)).toBe('PROXIMO');
+    expect(obligationStatus(TODAY + 6, false, TODAY)).toBe('AL_DIA');
     expect(obligationStatus(TODAY - 5, true, TODAY)).toBe('PAGADO');
   });
 
@@ -108,6 +108,75 @@ describe('cálculos de pantallas', () => {
     expect(state.committedPercent).toBe(50);
     expect(state.availableBalance).toBe(500_000);
     expect(state.paidThisMonthPercent).toBe(80);
+  });
+
+  test('inicio y facturas: excluyen meses futuros y solo avisan vencimientos dentro de los 5 días', () => {
+    const nextMonth = plusMonths(TODAY, 1);
+    const userData = data({
+      incomes,
+      obligations: [
+        obligation({ id: 'curr-paid', dueDate: TODAY + 1, amount: 250_000, isPaid: true, paidDate: TODAY }),
+        obligation({ id: 'curr-soon', dueDate: TODAY + 4, amount: 150_000, isPaid: false }),
+        obligation({ id: 'curr-far', dueDate: TODAY + 12, amount: 100_000, isPaid: false }),
+        obligation({ id: 'next-unpaid', dueDate: nextMonth, amount: 300_000, isPaid: false }),
+        obligation({ id: 'next-prepaid', dueDate: nextMonth + 5, amount: 400_000, isPaid: true, paidDate: TODAY }),
+      ],
+    });
+    const dash = dashboardState(userData, TODAY);
+    expect(dash.paidThisMonth).toBe(250_000);
+    expect(dash.pendingThisMonth).toBe(250_000);
+    expect(dash.committedThisMonth).toBe(500_000);
+    expect(dash.availableBalance).toBe(500_000);
+    expect(dash.upcoming.map((o) => o.id)).toEqual(['curr-soon']);
+
+    const obs = obligationsState(userData, 'TODOS', TODAY);
+    expect(obs.items.map((i) => i.obligation.id)).toEqual(['curr-soon', 'curr-far', 'curr-paid']);
+
+    const rep = reportsState(userData, { year: 2026, month: 10 }, TODAY);
+    expect(rep.netFlow).toBe(dash.availableBalance);
+    expect(rep.months).toEqual([{ year: 2026, month: 10 }]);
+  });
+
+  test('reportes: el historial de pagos excluye pagos adelantados de meses futuros', () => {
+    const nextMonth = plusMonths(TODAY, 1);
+    const userData = data({
+      incomes,
+      obligations: [
+        obligation({ id: 'curr-paid', dueDate: TODAY, amount: 200_000, isPaid: true, paidDate: TODAY }),
+        obligation({ id: 'next-prepaid', dueDate: nextMonth, amount: 400_000, isPaid: true, paidDate: TODAY }),
+      ],
+      history: [
+        {
+          id: 'h-curr',
+          userId: 'u1',
+          obligationId: 'curr-paid',
+          obligationName: 'Luz',
+          category: 'SERVICIOS',
+          amount: 200_000,
+          currency: 'PYG',
+          paidDate: TODAY,
+          householdId: null,
+        },
+        {
+          id: 'h-next',
+          userId: 'u1',
+          obligationId: 'next-prepaid',
+          obligationName: 'Luz Dic',
+          category: 'SERVICIOS',
+          amount: 400_000,
+          currency: 'PYG',
+          paidDate: TODAY,
+          householdId: null,
+        },
+      ],
+    });
+
+    const dash = dashboardState(userData, TODAY);
+    const rep = reportsState(userData, { year: 2026, month: 10 }, TODAY);
+
+    expect(dash.recentPayments.map((p) => p.id)).toEqual(['h-curr']);
+    expect(rep.payments.map((p) => p.id)).toEqual(['h-curr']);
+    expect(rep.netFlow).toBe(dash.availableBalance);
   });
 
   test('ahorro: reparte el ingreso según el modelo', () => {

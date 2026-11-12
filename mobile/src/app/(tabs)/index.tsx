@@ -29,7 +29,11 @@ export default function DashboardScreen() {
 
   return (
     <ScrollView contentContainerStyle={{ padding: ScreenPadding, gap: 16 }}>
-      <Greeting userName={firstName} hasAlerts={state.vencidosCount > 0} onBellPress={goToObligations} />
+      <Greeting
+        userName={firstName}
+        hasAlerts={state.vencidosCount + state.proximosCount > 0}
+        onBellPress={goToObligations}
+      />
 
       <BalanceHero state={state} currency={currency} />
 
@@ -55,14 +59,16 @@ export default function DashboardScreen() {
 
       {state.dueThisWeekCount > 0 && (
         <AlertBanner
-          message={`Tenés ${state.dueThisWeekCount} ${state.dueThisWeekCount > 1 ? 'facturas' : 'factura'} por pagar esta semana.`}
+          message={`Tenés ${state.dueThisWeekCount} ${state.dueThisWeekCount > 1 ? 'facturas' : 'factura'} por pagar en los próximos ${data.plan.reminderDaysBefore} días.`}
         />
       )}
 
       {state.upcoming.length === 0 && (
         <Card>
           <Text color={colors.onSurfaceVariant}>
-            Todavía no cargaste ningún pago. Tocá &quot;Registrar&quot; o &quot;Escanear&quot; para empezar.
+            {state.userHasData
+              ? `No tenés facturas por vencer en los próximos ${data.plan.reminderDaysBefore} días.`
+              : 'Todavía no cargaste ningún pago. Tocá "Registrar" o "Escanear" para empezar.'}
           </Text>
         </Card>
       )}
@@ -71,7 +77,7 @@ export default function DashboardScreen() {
         <ObligationCard
           key={obligation.id}
           obligation={obligation}
-          status={obligationStatus(obligation.dueDate, false, now)}
+          status={obligationStatus(obligation.dueDate, false, now, data.plan.reminderDaysBefore)}
           onPress={() => router.push({ pathname: '/obligation', params: { id: String(obligation.id) } })}
           onMarkPaid={() => void markAsPaid(obligation)}
           converter={data.converter}

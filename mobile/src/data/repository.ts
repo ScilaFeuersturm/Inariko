@@ -299,8 +299,33 @@ export async function saveObligation(input: ObligationInput): Promise<void> {
         randomUUID(), me, id, input.name, input.category, input.amount,
         input.currency, paidDate, householdId, now,
       );
-      if (input.isRecurring && existing != null) {
-        await writeObligation(
+      if (input.isRecurring) {
+        await ensureNextRecurringObligation(
+          {
+            ...input,
+            id: undefined,
+            dueDate: plusMonths(input.dueDate, 1),
+            isPaid: false,
+            paidDate: null,
+            createdFromOcr: false,
+            householdId,
+          },
+          me,
+          createdOn,
+        );
+      }
+    } else if (existing?.isPaid && isPaid) {
+      await db.runAsync(
+        `UPDATE payment_history
+         SET obligation_name = ?, category = ?, amount = ?, currency = ?, paid_date = ?, household_id = ?,
+             updated_at = ?, dirty = 1
+         WHERE obligation_id = ? AND deleted = 0`,
+        input.name, input.category, input.amount, input.currency, paidDate, householdId, now, id,
+      );
+      if (existing.isRecurring && !input.isRecurring) {
+        await removeNextRecurringObligation(existing, now);
+      } else if (!existing.isRecurring && input.isRecurring) {
+        await ensureNextRecurringObligation(
           {
             ...input,
             id: undefined,
@@ -331,6 +356,40 @@ async function writeObligation(input: ObligationInput, userId: string, createdOn
   );
 }
 
+/** Crea la próxima cuota recurrente solo si todavía no existe una activa para ese mismo mes/nombre/categoría. */
+async function ensureNextRecurringObligation(
+  input: ObligationInput,
+  userId: string,
+  createdOn: number,
+): Promise<void> {
+  const existingNext = await getDb().getFirstAsync<{ id: string }>(
+    `SELECT id FROM obligations
+     WHERE name = ? AND category = ? AND due_date = ? AND deleted = 0
+     LIMIT 1`,
+    input.name, input.category, input.dueDate,
+  );
+  if (!existingNext) {
+    await writeObligation(input, userId, createdOn);
+  }
+}
+
+async function removeNextRecurringObligation(obligation: Obligation, now: number): Promise<void> {
+  const db = getDb();
+  const nextDue = plusMonths(obligation.dueDate, 1);
+  const nextRow = await db.getFirstAsync<{ id: string }>(
+    `SELECT id FROM obligations
+     WHERE id != ? AND name = ? AND category = ? AND due_date = ? AND is_paid = 0 AND deleted = 0
+     ORDER BY updated_at DESC LIMIT 1`,
+    obligation.id, obligation.name, obligation.category, nextDue,
+  );
+  if (nextRow) {
+    await db.runAsync(
+      'UPDATE obligations SET deleted = 1, updated_at = ?, dirty = 1 WHERE id = ?',
+      now, nextRow.id,
+    );
+  }
+}
+
 async function revertPaymentSideEffects(obligation: Obligation, now: number): Promise<void> {
   const db = getDb();
   await db.runAsync(
@@ -338,28 +397,24 @@ async function revertPaymentSideEffects(obligation: Obligation, now: number): Pr
     now, obligation.id,
   );
   if (obligation.isRecurring) {
-    const nextDue = plusMonths(obligation.dueDate, 1);
-    const nextRow = await db.getFirstAsync<{ id: string }>(
-      `SELECT id FROM obligations
-       WHERE id != ? AND name = ? AND category = ? AND due_date = ? AND is_paid = 0 AND deleted = 0
-       ORDER BY updated_at DESC LIMIT 1`,
-      obligation.id, obligation.name, obligation.category, nextDue,
-    );
-    if (nextRow) {
-      await db.runAsync(
-        'UPDATE obligations SET deleted = 1, updated_at = ?, dirty = 1 WHERE id = ?',
-        now, nextRow.id,
-      );
-    }
+    await removeNextRecurringObligation(obligation, now);
   }
 }
 
-/** Solo quien cargó la factura puede borrarla (aunque esté compartida). */
+/** Solo quien cargó la factura puede borrarla (aunque esté compartida). Al borrarla, también limpia su historial y cuota futura. */
 export async function deleteObligation(id: string): Promise<void> {
-  await getDb().runAsync(
-    'UPDATE obligations SET deleted = 1, dirty = 1, updated_at = ? WHERE id = ? AND user_id = ?',
-    Date.now(), id, requireUserId(),
-  );
+  const db = getDb();
+  const existing = await getObligation(id);
+  const me = requireUserId();
+  if (!existing || existing.userId !== me) return;
+  const now = Date.now();
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      'UPDATE obligations SET deleted = 1, dirty = 1, updated_at = ? WHERE id = ? AND user_id = ?',
+      now, id, me,
+    );
+    await revertPaymentSideEffects(existing, now);
+  });
   afterLocalWrite();
 }
 
@@ -374,6 +429,7 @@ export async function getPaymentHistory(): Promise<PaymentHistoryEntry[]> {
  * otra persona) y, si la factura era de la casa, también se comparten.
  */
 export async function markAsPaid(obligation: Obligation, paidDate: number = today()): Promise<void> {
+  if (obligation.isPaid) return;
   const db = getDb();
   const now = Date.now();
   const me = requireUserId();
@@ -391,7 +447,7 @@ export async function markAsPaid(obligation: Obligation, paidDate: number = toda
       obligation.currency, paidDate, obligation.householdId, now,
     );
     if (obligation.isRecurring) {
-      await writeObligation(
+      await ensureNextRecurringObligation(
         {
           ...obligation,
           id: undefined,

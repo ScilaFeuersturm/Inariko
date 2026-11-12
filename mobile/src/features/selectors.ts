@@ -86,18 +86,18 @@ export function dashboardState(data: UserData, today: EpochDay = todayFn()): Das
   const { obligations, incomes, plan, history, converter } = data;
   const currentMonth = yearMonthOf(today);
   const reminderDays = plan.reminderDaysBefore;
-  const unpaid = obligations.filter((o) => !o.isPaid);
   const statusOf = (o: Obligation) => obligationStatus(o.dueDate, false, today, reminderDays);
 
-  const totalIncome = converter.sumOf(incomes);
-  const pendingThisMonth = converter.sumOf(
-    unpaid.filter((o) => sameYearMonth(o.dueDate, currentMonth) || statusOf(o) === 'VENCIDO'),
+  // Solo obligaciones del mes corriente (o impagas ya vencidas de meses anteriores); nunca meses futuros.
+  const currentObligations = obligations.filter(
+    (o) => sameYearMonth(o.dueDate, currentMonth) || (!o.isPaid && statusOf(o) === 'VENCIDO'),
   );
-  const paidObligationsThisMonth = obligations.filter(
-    (o) =>
-      o.isPaid &&
-      (sameYearMonth(o.dueDate, currentMonth) ||
-        (o.paidDate != null ? sameYearMonth(o.paidDate, currentMonth) : statusOf(o) === 'VENCIDO')),
+  const unpaidCurrent = currentObligations.filter((o) => !o.isPaid);
+
+  const totalIncome = converter.sumOf(incomes);
+  const pendingThisMonth = converter.sumOf(unpaidCurrent);
+  const paidObligationsThisMonth = currentObligations.filter(
+    (o) => o.isPaid && sameYearMonth(o.dueDate, currentMonth),
   );
   const activeObligationIds = new Set(obligations.map((o) => o.id));
   const orphanPaymentsThisMonth = history.filter(
@@ -110,23 +110,34 @@ export function dashboardState(data: UserData, today: EpochDay = todayFn()): Das
       ? 0
       : Math.max(1, Math.trunc((committedThisMonth * 100) / totalIncome));
 
+  // En Inicio solo se avisa de las facturas del mes corriente que vencen dentro del umbral (5 días) o ya vencidas.
+  const upcoming = [...unpaidCurrent]
+    .filter((o) => o.dueDate <= today + reminderDays)
+    .sort((a, b) => a.dueDate - b.dueDate)
+    .slice(0, 6);
+
+  const currentObligationIds = new Set(currentObligations.map((o) => o.id));
+
   return {
     userHasData: obligations.length > 0 || incomes.length > 0,
     totalIncome,
-    totalPending: converter.sumOf(unpaid),
+    totalPending: pendingThisMonth,
     pendingThisMonth,
     paidThisMonth,
     committedThisMonth,
     committedPercent,
-    vencidosCount: unpaid.filter((o) => statusOf(o) === 'VENCIDO').length,
-    proximosCount: unpaid.filter((o) => ['HOY', 'PROXIMO'].includes(statusOf(o))).length,
-    alDiaCount: unpaid.filter((o) => statusOf(o) === 'AL_DIA').length,
+    vencidosCount: unpaidCurrent.filter((o) => statusOf(o) === 'VENCIDO').length,
+    proximosCount: unpaidCurrent.filter((o) => ['HOY', 'PROXIMO'].includes(statusOf(o))).length,
+    alDiaCount: unpaidCurrent.filter((o) => statusOf(o) === 'AL_DIA').length,
     isOverBudget: totalIncome > 0 && committedThisMonth > totalIncome,
     overBudgetAmount: Math.max(0, committedThisMonth - totalIncome),
-    upcoming: [...unpaid].sort((a, b) => a.dueDate - b.dueDate).slice(0, 6),
-    dueThisWeekCount: unpaid.filter((o) => o.dueDate <= today + 7).length,
+    upcoming,
+    dueThisWeekCount: upcoming.length,
     paidThisMonthPercent: committedThisMonth === 0 ? 0 : Math.trunc((paidThisMonth * 100) / committedThisMonth),
-    recentPayments: [...history].sort((a, b) => b.paidDate - a.paidDate).slice(0, 3),
+    recentPayments: history
+      .filter((h) => sameYearMonth(h.paidDate, currentMonth) && currentObligationIds.has(h.obligationId))
+      .sort((a, b) => b.paidDate - a.paidDate)
+      .slice(0, 3),
     availableBalance: totalIncome - committedThisMonth,
   };
 }
@@ -163,10 +174,19 @@ export type ObligationsState = {
 };
 
 export function obligationsState(data: UserData, filter: ObligationFilter, today: EpochDay = todayFn()): ObligationsState {
-  const { obligations, converter } = data;
-  const currentKey = ymKey(yearMonthOf(today));
-  const all = obligations.map((obligation) => ({ obligation, status: obligationStatus(obligation.dueDate, obligation.isPaid, today) }));
-  const unpaid = obligations.filter((o) => !o.isPaid);
+  const { obligations, plan, converter } = data;
+  const currentMonth = yearMonthOf(today);
+  const currentKey = ymKey(currentMonth);
+  const reminderDays = plan.reminderDaysBefore;
+  // Solo mostramos las facturas del mes corriente (y las vencidas impagas de meses previos), nunca las de meses futuros.
+  const currentObligations = obligations.filter(
+    (o) => sameYearMonth(o.dueDate, currentMonth) || (!o.isPaid && ymKey(yearMonthOf(o.dueDate)) < currentKey),
+  );
+  const all = currentObligations.map((obligation) => ({
+    obligation,
+    status: obligationStatus(obligation.dueDate, obligation.isPaid, today, reminderDays),
+  }));
+  const unpaid = currentObligations.filter((o) => !o.isPaid);
   const counts = Object.fromEntries(
     OBLIGATION_FILTERS.map(({ key }) => [key, all.filter((it) => filterMatches(key, it.status)).length]),
   ) as Record<ObligationFilter, number>;
@@ -175,7 +195,7 @@ export function obligationsState(data: UserData, filter: ObligationFilter, today
       .filter((it) => filterMatches(filter, it.status))
       .sort((a, b) => Number(a.obligation.isPaid) - Number(b.obligation.isPaid) || a.obligation.dueDate - b.obligation.dueDate),
     counts,
-    pendingThisMonth: converter.sumOf(unpaid.filter((o) => ymKey(yearMonthOf(o.dueDate)) <= currentKey)),
+    pendingThisMonth: converter.sumOf(unpaid),
     activeCount: unpaid.length,
     nextDue: unpaid.reduce<Obligation | null>((min, o) => (min == null || o.dueDate < min.dueDate ? o : min), null),
   };
@@ -242,21 +262,25 @@ export function reportsState(data: UserData, month: YearMonth, today: EpochDay =
     })
     .sort((a, b) => b.amount - a.amount);
 
+  const currentKey = ymKey(yearMonthOf(today));
   const monthKeys = new Set<number>([
-    ...obligations.map((o) => ymKey(yearMonthOf(o.dueDate))),
-    ...history.map((h) => ymKey(yearMonthOf(h.paidDate))),
-    ymKey(yearMonthOf(today)),
+    ...obligations.map((o) => ymKey(yearMonthOf(o.dueDate))).filter((k) => k <= currentKey),
+    ...history.map((h) => ymKey(yearMonthOf(h.paidDate))).filter((k) => k <= currentKey),
+    currentKey,
     ymKey(month),
   ]);
   const totalIncome = converter.sumOf(incomes);
   const paidExpenses = converter.sumOf(inMonth.filter((o) => o.isPaid));
+  const inMonthIds = new Set(inMonth.map((o) => o.id));
   return {
     months: [...monthKeys].sort((a, b) => a - b).map(ymFromKey),
     totalIncome,
     totalExpenses,
     paidExpenses,
     categories,
-    payments: history.filter((h) => sameYearMonth(h.paidDate, month)).sort((a, b) => b.paidDate - a.paidDate),
+    payments: history
+      .filter((h) => inMonthIds.has(h.obligationId) || (sameYearMonth(h.paidDate, month) && !obligations.some((o) => o.id === h.obligationId)))
+      .sort((a, b) => b.paidDate - a.paidDate),
     netFlow: totalIncome - totalExpenses,
     expensesPercentOfIncome: totalIncome === 0 ? 0 : Math.trunc((totalExpenses * 100) / totalIncome),
     paidPercent: totalExpenses === 0 ? 0 : Math.trunc((paidExpenses * 100) / totalExpenses),
@@ -277,9 +301,10 @@ export function remindersFor(
   describe: (o: Obligation) => string,
   today: EpochDay = todayFn(),
 ): Reminder[] {
+  const currentMonth = yearMonthOf(today);
   const reminders: Reminder[] = [];
   for (const o of obligations) {
-    if (o.isPaid) continue;
+    if (o.isPaid || !sameYearMonth(o.dueDate, currentMonth)) continue;
     const body = describe(o);
     const candidates: [EpochDay, string][] = [
       [o.dueDate - reminderDaysBefore, `${o.name} vence pronto`],
