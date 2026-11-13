@@ -1,6 +1,6 @@
 import { epochDayOf, toParts } from '@/domain/dates';
 
-import { decryptSensitivePayload, encryptSensitivePayload, maskSensitiveText } from './privacy';
+import { decryptSensitivePayload, encryptSensitivePayload, isMaskedText, maskSensitiveText } from './privacy';
 
 /**
  * Qué se sincroniza y cómo se convierte cada columna entre la base local (SQLite) y Supabase (Postgres).
@@ -141,6 +141,11 @@ export function toRemote(table: SyncTable, local: Row): Row {
     else out[column] = value;
   }
 
+  // Copia local que quedó enmascarada (versiones anteriores de la app no podían descifrar): no se
+  // manda `encrypted_payload`, así el servidor conserva el cifrado con los valores reales y no se
+  // reemplaza por uno de "Sueld***" y $0. Al bajar de nuevo, la fila se recupera.
+  const localIsMasked = isLocallyMasked(table, local);
+
   if (table.local === 'incomes') {
     const name = String(local.name ?? '');
     const amount = Number(local.amount ?? 0);
@@ -170,11 +175,39 @@ export function toRemote(table: SyncTable, local: Row): Row {
     out.amount = 0;
   }
 
+  if (localIsMasked) delete out.encrypted_payload;
   return out;
+}
+
+/** Tablas con nombre y monto enmascarados en el servidor. */
+export function isSensitiveTable(table: SyncTable): boolean {
+  return table.local === 'incomes' || table.local === 'obligations' || table.local === 'payment_history';
+}
+
+/** Columnas que en el servidor están enmascaradas y solo se recuperan descifrando. */
+export function sensitiveColumnsOf(table: SyncTable): string[] {
+  if (table.local === 'payment_history') return ['obligation_name', 'amount'];
+  if (table.local === 'obligations') return ['name', 'amount', 'reference', 'notes'];
+  if (table.local === 'incomes') return ['name', 'amount'];
+  return [];
+}
+
+function isLocallyMasked(table: SyncTable, local: Row): boolean {
+  if (!isSensitiveTable(table)) return false;
+  const name = table.local === 'payment_history' ? local.obligation_name : local.name;
+  return isMaskedText(name) && Number(local.amount ?? 0) === 0;
 }
 
 /** Fila de Supabase → valores para la base local. */
 export function fromRemote(table: SyncTable, remote: Row): Row {
+  return fromRemoteWithStatus(table, remote).values;
+}
+
+/**
+ * Como `fromRemote`, pero avisa si las columnas sensibles se pudieron descifrar. Si no (`decrypted`
+ * false), los valores de esas columnas son los enmascarados del servidor y no deben pisar los locales.
+ */
+export function fromRemoteWithStatus(table: SyncTable, remote: Row): { values: Row; decrypted: boolean } {
   const out: Row = {};
   for (const [column, type] of Object.entries(table.columns)) {
     const value = remote[column];
@@ -185,8 +218,10 @@ export function fromRemote(table: SyncTable, remote: Row): Row {
     else out[column] = value;
   }
 
-  if (table.local === 'incomes' || table.local === 'obligations' || table.local === 'payment_history') {
+  let ok = true;
+  if (isSensitiveTable(table)) {
     const decrypted = decryptSensitivePayload(String(remote.id ?? ''), remote.encrypted_payload as string | null);
+    ok = decrypted != null;
     if (decrypted) {
       if (table.local === 'payment_history') {
         out.obligation_name = decrypted.n;
@@ -201,7 +236,7 @@ export function fromRemote(table: SyncTable, remote: Row): Row {
     }
   }
 
-  return out;
+  return { values: out, decrypted: ok };
 }
 
 /**

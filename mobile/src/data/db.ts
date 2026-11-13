@@ -113,6 +113,11 @@ const MIGRATIONS: string[] = [
   ALTER TABLE obligations ADD COLUMN household_id TEXT;
   ALTER TABLE payment_history ADD COLUMN household_id TEXT;
   `,
+  // Recuperación de datos enmascarados: versiones anteriores no podían descifrar lo que bajaba del
+  // servidor y guardaban "Sueld***" y $0. Se vuelven a bajar desde cero estas tablas para descifrarlas.
+  `
+  DELETE FROM sync_state WHERE table_name IN ('incomes', 'obligations', 'payment_history');
+  `,
 ];
 
 let database: SQLite.SQLiteDatabase | null = null;

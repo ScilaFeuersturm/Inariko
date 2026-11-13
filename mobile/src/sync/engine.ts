@@ -2,8 +2,9 @@ import { getDb } from '@/data/db';
 import { supabase } from '@/data/supabase';
 
 import {
-  fromRemote,
+  fromRemoteWithStatus,
   parseServerTimestamp,
+  sensitiveColumnsOf,
   SHARED_TABLES,
   shouldApplyRemote,
   SYNC_TABLES,
@@ -124,11 +125,15 @@ async function pull(table: SyncTable, userId: string): Promise<number> {
           remote[table.primaryKey] as string,
         );
         if (!shouldApplyRemote(local, Number(remote.updated_at))) continue;
-        const values = fromRemote(table, remote);
+        const { values, decrypted } = fromRemoteWithStatus(table, remote);
+        // Si el nombre y el monto no se pudieron descifrar, en el servidor solo están enmascarados
+        // ("Sueld***", $0): se conservan los valores reales que ya hay en este teléfono.
+        const sensitive = decrypted ? [] : sensitiveColumnsOf(table);
+        const updatable = columns.filter((c) => !sensitive.includes(c));
         // Solo se pisan las columnas sincronizadas (por ejemplo, el email local del perfil se conserva).
         await db.runAsync(
           `INSERT INTO ${table.local} (${columns.join(', ')}, dirty) VALUES (${columns.map(() => '?').join(', ')}, 0)
-           ON CONFLICT(${table.primaryKey}) DO UPDATE SET ${columns.map((c) => `${c} = excluded.${c}`).join(', ')}, dirty = 0`,
+           ON CONFLICT(${table.primaryKey}) DO UPDATE SET ${updatable.map((c) => `${c} = excluded.${c}`).join(', ')}, dirty = 0`,
           ...columns.map((c) => values[c] as string | number | null),
         );
       }

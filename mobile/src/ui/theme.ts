@@ -17,7 +17,7 @@ export const Palette = {
   Paper: '#F2F5F4', // fondo de pantalla
   Sheet: '#FFFFFF', // tarjetas
   SheetSunk: '#E3EAEA', // superficie hundida (pistas de barras, chips apagados)
-  Rule: '#82959A', // bordes de campos (3:1 sobre blanco)
+  Rule: '#74878C', // bordes de campos y chips: 3:1 o más sobre blanco, el fondo y las superficies hundidas
   RuleFaint: '#D5DFDF', // divisores y contornos decorativos
   Stamp: '#A8243A', // sello: vencido / error
   StampWash: '#F9E1E4',

@@ -41,6 +41,11 @@ function messageFor(error: AuthError | Error): string {
   if (code === 'over_email_send_rate_limit' || code === 'over_request_rate_limit') {
     return 'Hiciste muchos intentos seguidos. Esperá unos minutos y probá de nuevo.';
   }
+  // Supabase crea la cuenta y recién después falla al mandar el mail: la cuenta ya existe, así que
+  // reintentar el registro da "Ya existe una cuenta". Se le dice que pruebe iniciar sesión.
+  if (/sending (confirmation|magic link)? ?email/i.test(error.message)) {
+    return 'Tu cuenta se creó, pero no pudimos enviarte el email de confirmación. Probá iniciar sesión.';
+  }
   if (/network|fetch|timeout/i.test(error.message)) return 'No pudimos conectarnos. Revisá tu conexión a internet.';
   return 'Algo salió mal. Probá de nuevo en unos minutos.';
 }

@@ -50,8 +50,11 @@ export function ScreenScroll({
 }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  // Sin barra superior, la franja de la hora/batería (y la isla dinámica) queda reservada fuera del
+  // scroll: así ni un `paddingTop` de `contentStyle` ni el contenido al desplazarse la tapan.
+  const reserveTop = title == null && safeTop;
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
+    <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: reserveTop ? insets.top : 0 }}>
       {title != null && <ScreenHeader title={title} actions={actions} />}
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
@@ -60,7 +63,6 @@ export function ScreenScroll({
           contentContainerStyle={[
             {
               padding: ScreenPadding,
-              paddingTop: safeTop ? insets.top + ScreenPadding : ScreenPadding,
               paddingBottom: (title != null || safeTop ? insets.bottom : 0) + ScreenPadding,
               gap: 16,
             },

@@ -94,7 +94,16 @@ export function TextField({
           }}
           placeholderTextColor={colors.onSurfaceVariant}
           selectionColor={colors.primary}
-          style={[textStyle('bodyLarge'), { flex: 1, color: colors.onSurface, paddingVertical: 12 }]}
+          style={[
+            textStyle('bodyLarge'),
+            inputProps.multiline
+              ? { paddingVertical: 12, textAlignVertical: 'top' }
+              : // Una sola línea: sin lineHeight ni padding vertical. En iOS, lineHeight en un TextInput
+                // de una línea corre el texto hacia abajo y lo recorta mientras se escribe; la altura
+                // la da el contenedor (minHeight) y el texto queda centrado.
+                { lineHeight: undefined, paddingVertical: 0, minHeight: 48 },
+            { flex: 1, color: colors.onSurface },
+          ]}
         />
         {right}
       </View>
@@ -202,10 +211,12 @@ export function SwitchRow({
   onValueChange,
   supporting,
   testID,
+  disabled,
 }: {
   label: string;
   value: boolean;
   onValueChange: (v: boolean) => void;
+  disabled?: boolean;
   /** Texto de ayuda debajo de la etiqueta. */
   supporting?: string;
   testID?: string;
@@ -227,7 +238,10 @@ export function SwitchRow({
         accessibilityHint={supporting}
         value={value}
         onValueChange={onValueChange}
-        trackColor={{ true: colors.primary, false: colors.surfaceVariant }}
+        disabled={disabled}
+        // Apagado con el color de borde: la pista se distingue de la tarjeta (3:1), no solo el círculo.
+        trackColor={{ true: colors.primary, false: colors.outline }}
+        ios_backgroundColor={colors.outline}
         thumbColor={Platform.OS === 'android' ? (value ? colors.onPrimary : colors.outline) : undefined}
       />
     </View>

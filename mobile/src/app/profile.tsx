@@ -198,6 +198,14 @@ function RemindersCard() {
 function SecurityCard() {
   const { colors } = useTheme();
   const { biometrics, biometricUnlockEnabled, setBiometricUnlockEnabled } = useAppLock();
+  // Mientras se muestra la verificación, el interruptor no cambia ni acepta otro toque.
+  const [verifying, setVerifying] = useState(false);
+  const toggleBiometrics = async (enabled: boolean) => {
+    if (verifying) return;
+    setVerifying(true);
+    await setBiometricUnlockEnabled(enabled);
+    setVerifying(false);
+  };
   return (
     <Card>
       <Text variant="titleMedium">Seguridad</Text>
@@ -209,7 +217,9 @@ function SecurityCard() {
           <SwitchRow
             label={`Desbloquear con ${biometrics.label}`}
             value={biometricUnlockEnabled}
-            onValueChange={setBiometricUnlockEnabled}
+            onValueChange={(enabled) => void toggleBiometrics(enabled)}
+            disabled={verifying}
+            supporting="Para cambiarlo te vamos a pedir que confirmes que sos vos."
           />
         </View>
       ) : (

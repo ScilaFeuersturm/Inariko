@@ -20,13 +20,14 @@ export type Biometrics = { available: boolean; label: string; icon: string };
 type AppLockContextValue = {
   biometrics: Biometrics;
   biometricUnlockEnabled: boolean;
-  setBiometricUnlockEnabled: (enabled: boolean) => void;
+  /** Pide verificación (biometría o código del teléfono) antes de cambiar. true si se aplicó. */
+  setBiometricUnlockEnabled: (enabled: boolean) => Promise<boolean>;
 };
 
 const AppLockContext = createContext<AppLockContextValue>({
   biometrics: { available: false, label: '', icon: 'fingerprint' },
   biometricUnlockEnabled: false,
-  setBiometricUnlockEnabled: () => {},
+  setBiometricUnlockEnabled: async () => false,
 });
 
 export function useAppLock(): AppLockContextValue {
@@ -122,10 +123,30 @@ export function AppLockProvider({ sessionState, children }: { sessionState: Sess
     setLocked(false);
   }, []);
 
-  const setBiometricUnlockEnabled = useCallback((enabled: boolean) => {
-    setSecureItem(BIOMETRIC_PREF_KEY, enabled ? 'on' : 'off');
-    setBiometricPref(enabled);
-  }, []);
+  /**
+   * Cambiar el desbloqueo biométrico exige verificar que quien tiene el teléfono es el dueño: sin
+   * esto, cualquiera con la app abierta podía desactivar Face ID. Se acepta la biometría o el código
+   * del teléfono. Si se cancela o falla, la preferencia no cambia. Devuelve si se aplicó.
+   */
+  const setBiometricUnlockEnabled = useCallback(
+    async (enabled: boolean): Promise<boolean> => {
+      if (enabled === biometricPref) return true;
+      const result = await LocalAuthentication.authenticateAsync({
+        promptMessage: enabled
+          ? `Confirmá para activar ${biometrics.label || 'el desbloqueo biométrico'}`
+          : `Confirmá para desactivar ${biometrics.label || 'el desbloqueo biométrico'}`,
+        cancelLabel: 'Cancelar',
+      }).catch(() => ({ success: false as const }));
+      if (!result.success) return false;
+      setSecureItem(BIOMETRIC_PREF_KEY, enabled ? 'on' : 'off');
+      setBiometricPref(enabled);
+      // Recién verificado: cuenta como actividad para que no se bloquee enseguida.
+      lastTouch.current = Date.now();
+      markActive(lastTouch.current);
+      return true;
+    },
+    [biometricPref, biometrics.label],
+  );
 
   const useBiometrics = biometrics.available && biometricPref;
 

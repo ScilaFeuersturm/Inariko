@@ -123,6 +123,12 @@ export default function IncomeScreen() {
           />
           <ShareWithHousehold value={form.shared} onChange={(shared) => setForm((f) => ({ ...f, shared }))} testID="income-shared" />
           <PrimaryButton text="Agregar" onPress={add} disabled={!isValid} />
+          {/* Con el botón deshabilitado, se dice qué falta en vez de dejarlo apagado sin explicación. */}
+          {!isValid && (form.name !== '' || form.amountText !== '') && (
+            <Text variant="bodySmall" color={colors.onSurfaceVariant} accessibilityLiveRegion="polite" style={{ textAlign: 'center' }}>
+              {form.name.trim() === '' ? 'Falta el nombre del ingreso.' : 'Falta el monto mensual.'}
+            </Text>
+          )}
         </View>
       </Card>
     </ScreenScroll>
