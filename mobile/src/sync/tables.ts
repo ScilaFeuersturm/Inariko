@@ -1,5 +1,7 @@
 import { epochDayOf, toParts } from '@/domain/dates';
 
+import { decryptSensitivePayload, encryptSensitivePayload, maskSensitiveText } from './privacy';
+
 /**
  * Qué se sincroniza y cómo se convierte cada columna entre la base local (SQLite) y Supabase (Postgres).
  * Los nombres de columna son iguales en los dos lados; cambian los tipos:
@@ -138,6 +140,36 @@ export function toRemote(table: SyncTable, local: Row): Row {
     else if (type === 'int') out[column] = Number(value);
     else out[column] = value;
   }
+
+  if (table.local === 'incomes') {
+    const name = String(local.name ?? '');
+    const amount = Number(local.amount ?? 0);
+    out.encrypted_payload = encryptSensitivePayload(String(local.id), { n: name, a: amount });
+    out.name = maskSensitiveText(name);
+    out.amount = 0;
+  } else if (table.local === 'obligations') {
+    const name = String(local.name ?? '');
+    const amount = Number(local.amount ?? 0);
+    const reference = local.reference != null ? String(local.reference) : null;
+    const notes = local.notes != null ? String(local.notes) : null;
+    out.encrypted_payload = encryptSensitivePayload(String(local.id), {
+      n: name,
+      a: amount,
+      r: reference,
+      no: notes,
+    });
+    out.name = maskSensitiveText(name);
+    out.amount = 0;
+    out.reference = reference ? maskSensitiveText(reference) : null;
+    out.notes = notes ? '***' : null;
+  } else if (table.local === 'payment_history') {
+    const obligationName = String(local.obligation_name ?? '');
+    const amount = Number(local.amount ?? 0);
+    out.encrypted_payload = encryptSensitivePayload(String(local.id), { n: obligationName, a: amount });
+    out.obligation_name = maskSensitiveText(obligationName);
+    out.amount = 0;
+  }
+
   return out;
 }
 
@@ -152,6 +184,23 @@ export function fromRemote(table: SyncTable, remote: Row): Row {
     else if (type === 'int') out[column] = Number(value);
     else out[column] = value;
   }
+
+  if (table.local === 'incomes' || table.local === 'obligations' || table.local === 'payment_history') {
+    const decrypted = decryptSensitivePayload(String(remote.id ?? ''), remote.encrypted_payload as string | null);
+    if (decrypted) {
+      if (table.local === 'payment_history') {
+        out.obligation_name = decrypted.n;
+      } else {
+        out.name = decrypted.n;
+      }
+      out.amount = decrypted.a;
+      if (table.local === 'obligations') {
+        out.reference = decrypted.r ?? null;
+        out.notes = decrypted.no ?? null;
+      }
+    }
+  }
+
   return out;
 }
 

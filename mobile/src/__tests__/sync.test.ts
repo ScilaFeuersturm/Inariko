@@ -47,11 +47,53 @@ test('una factura local se convierte al formato del servidor y vuelve igual', ()
   };
   const remote = toRemote(obligations, local);
   expect(remote.household_id).toBe(local.household_id);
-  expect(remote).toMatchObject({ due_date: '2026-10-20', is_recurring: true, is_paid: false, created_on: '2026-10-12' });
+  expect(remote).toMatchObject({
+    name: 'Luz***',
+    amount: 0,
+    due_date: '2026-10-20',
+    is_recurring: true,
+    is_paid: false,
+    created_on: '2026-10-12',
+  });
+  expect(typeof remote.encrypted_payload).toBe('string');
   expect(remote).not.toHaveProperty('dirty');
 
   const { dirty: _dirty, ...expected } = local;
   expect(fromRemote(obligations, { ...remote, server_updated_at: '2026-10-12T00:00:00+00:00' })).toEqual(expected);
+});
+
+test('privacidad: trunca a 5 caracteres + *** en el servidor y recupera el original al bajar', () => {
+  const local = {
+    id: '6f0c2a52-1111-4a6b-9d0b-2f0f6a6b0099',
+    user_id: 'b3f1c1d2-2222-4c3d-8e4f-5a6b7c8d0002',
+    name: 'Supermercado mensual',
+    reference: 'FACT-998877',
+    amount: 12500000,
+    currency: 'ARS',
+    due_date: epochDayOf(2026, 11, 15),
+    category: 'ALIMENTACION',
+    is_recurring: 1,
+    is_paid: 1,
+    paid_date: epochDayOf(2026, 11, 10),
+    notes: 'Compra grande del mes',
+    created_from_ocr: 0,
+    created_on: epochDayOf(2026, 11, 1),
+    household_id: null,
+    updated_at: 1_794_000_000_000,
+    deleted: 0,
+    dirty: 1,
+  };
+  const remote = toRemote(obligations, local);
+  expect(remote.name).toBe('Super***');
+  expect(remote.reference).toBe('FACT-***');
+  expect(remote.notes).toBe('***');
+  expect(remote.amount).toBe(0);
+
+  const restored = fromRemote(obligations, remote);
+  expect(restored.name).toBe('Supermercado mensual');
+  expect(restored.reference).toBe('FACT-998877');
+  expect(restored.notes).toBe('Compra grande del mes');
+  expect(restored.amount).toBe(12500000);
 });
 
 test('conflictos: gana el cambio más reciente', () => {
