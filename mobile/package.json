@@ -1,6 +1,6 @@
 {
   "name": "netto",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "main": "expo-router/entry",
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
@@ -49,7 +49,12 @@
     "typecheck": "tsc --noEmit",
     "lint": "expo lint",
     "eas:release": "npx --yes eas-cli@latest build --profile production --platform all --auto-submit --non-interactive --no-wait",
-    "eas:preview-apk": "npx --yes eas-cli@latest build --profile preview --platform android --non-interactive --no-wait"
+    "eas:preview-apk": "npx --yes eas-cli@latest build --profile preview --platform android --non-interactive --no-wait",
+    "eas:status": "npx --yes eas-cli@latest build:list --limit 6 --non-interactive --json",
+    "eas:version-bump-ios": "npx --yes eas-cli@latest build:version:set --platform ios --profile production",
+    "eas:release-ios": "npx --yes eas-cli@latest build --profile production --platform ios --auto-submit --non-interactive --no-wait",
+    "eas:submit-ios": "npx --yes eas-cli@latest submit --platform ios --id 9871680a-4a45-478f-90ea-87cfa430bbab --non-interactive",
+    "eas:submit-android": "npx --yes eas-cli@latest submit --platform android --id 3f542c14-8d70-4f03-b30a-5a0d3891da72 --non-interactive"
   },
   "private": true,
   "jest": {
