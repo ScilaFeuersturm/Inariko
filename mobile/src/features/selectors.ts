@@ -99,11 +99,7 @@ export function dashboardState(data: UserData, today: EpochDay = todayFn()): Das
   const paidObligationsThisMonth = currentObligations.filter(
     (o) => o.isPaid && sameYearMonth(o.dueDate, currentMonth),
   );
-  const activeObligationIds = new Set(obligations.map((o) => o.id));
-  const orphanPaymentsThisMonth = history.filter(
-    (h) => sameYearMonth(h.paidDate, currentMonth) && !activeObligationIds.has(h.obligationId),
-  );
-  const paidThisMonth = converter.sumOf(paidObligationsThisMonth) + converter.sumOf(orphanPaymentsThisMonth);
+  const paidThisMonth = converter.sumOf(paidObligationsThisMonth);
   const committedThisMonth = pendingThisMonth + paidThisMonth;
   const committedPercent =
     totalIncome <= 0 || committedThisMonth <= 0
@@ -279,7 +275,7 @@ export function reportsState(data: UserData, month: YearMonth, today: EpochDay =
     paidExpenses,
     categories,
     payments: history
-      .filter((h) => inMonthIds.has(h.obligationId) || (sameYearMonth(h.paidDate, month) && !obligations.some((o) => o.id === h.obligationId)))
+      .filter((h) => inMonthIds.has(h.obligationId))
       .sort((a, b) => b.paidDate - a.paidDate),
     netFlow: totalIncome - totalExpenses,
     expensesPercentOfIncome: totalIncome === 0 ? 0 : Math.trunc((totalExpenses * 100) / totalIncome),

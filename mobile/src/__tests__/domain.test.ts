@@ -179,6 +179,47 @@ describe('cálculos de pantallas', () => {
     expect(rep.netFlow).toBe(dash.availableBalance);
   });
 
+  test('inicio y reportes: ignoran pagos huérfanos de facturas eliminadas', () => {
+    const userData = data({
+      incomes,
+      obligations: [
+        obligation({ id: 'active-paid', dueDate: TODAY, amount: 200_000, isPaid: true, paidDate: TODAY }),
+      ],
+      history: [
+        {
+          id: 'h-active',
+          userId: 'u1',
+          obligationId: 'active-paid',
+          obligationName: 'Luz',
+          category: 'SERVICIOS',
+          amount: 200_000,
+          currency: 'PYG',
+          paidDate: TODAY,
+          householdId: null,
+        },
+        {
+          id: 'h-orphan',
+          userId: 'u1',
+          obligationId: 'deleted-obligation',
+          obligationName: 'Préstamo eliminado',
+          category: 'DEUDAS',
+          amount: 600_000,
+          currency: 'PYG',
+          paidDate: TODAY,
+          householdId: null,
+        },
+      ],
+    });
+
+    const dash = dashboardState(userData, TODAY);
+    const rep = reportsState(userData, { year: 2026, month: 10 }, TODAY);
+
+    expect(dash.paidThisMonth).toBe(200_000);
+    expect(dash.availableBalance).toBe(800_000);
+    expect(rep.netFlow).toBe(800_000);
+    expect(rep.payments.map((p) => p.id)).toEqual(['h-active']);
+  });
+
   test('ahorro: reparte el ingreso según el modelo', () => {
     const state = budgetState(
       data({ incomes, obligations: [obligation({ category: 'OCIO', amount: 50_000, dueDate: TODAY + 1 })] }),

@@ -37,6 +37,7 @@ insert into public.tester_grants (email, plan, pair_key, pair_role) values
   ('agustincabrerabrian563@gmail.com', 'individual', null, null),
   ('gigic2002@hotmail.com', 'individual', null, null),
   ('mrominaovejero@gmail.com', 'individual', null, null),
+  ('miguelchirino19@gmail.com', 'individual', null, null),
   -- Pareja Familiar 1: Nidia Mónica Romero + Daniel Carlos Aranda
   ('romeronidiamonica@gmail.com', 'family', 'pair_1', 'owner'),
   ('arandadanielcarlos@gmail.com', 'family', 'pair_1', 'member'),
