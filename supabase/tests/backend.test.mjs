@@ -2,6 +2,7 @@
 // Correr desde la raíz del repo: node --test supabase/tests/backend.test.mjs
 // Verifica seguridad por fila (RLS), la regla "gana el último", validaciones y el borrado de cuenta.
 import assert from 'node:assert/strict';
+import { protectedBill, readBill } from './fixtures/privacy.mjs';
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { before, test } from 'node:test';
@@ -33,7 +34,7 @@ async function newUser(name) {
 }
 
 function obligation(userId, overrides = {}) {
-  return {
+  return protectedBill({
     id: randomUUID(),
     user_id: userId,
     name: 'Luz',
@@ -44,7 +45,7 @@ function obligation(userId, overrides = {}) {
     created_on: '2026-10-12',
     updated_at: Date.now(),
     ...overrides,
-  };
+  });
 }
 
 let ana;
@@ -82,8 +83,9 @@ test('no se pueden modificar datos de otro usuario', async () => {
   const mine = obligation(ana.id);
   await ana.client.from('obligations').insert(mine);
   await beto.client.from('obligations').update({ name: 'Hackeado', updated_at: Date.now() + 1000 }).eq('id', mine.id);
-  const { data } = await ana.client.from('obligations').select('name').eq('id', mine.id).single();
-  assert.equal(data.name, 'Luz');
+  const { data } = await ana.client.from('obligations').select('*').eq('id', mine.id).single();
+  assert.equal(data.name, '***');
+  assert.equal(readBill(data).n, 'Luz');
 });
 
 test('no se puede borrar físicamente (borrado lógico solamente)', async () => {
@@ -99,11 +101,11 @@ test('gana el último cambio: un cambio más viejo no pisa uno más nuevo', asyn
   const mine = obligation(ana.id, { updated_at: now });
   await ana.client.from('obligations').insert(mine);
 
-  await ana.client.from('obligations').upsert({ ...mine, name: 'Nuevo', updated_at: now + 2000 });
-  await ana.client.from('obligations').upsert({ ...mine, name: 'Viejo', updated_at: now + 1000 });
+  await ana.client.from('obligations').upsert(protectedBill({ ...mine, name: 'Nuevo', amount: 350000, updated_at: now + 2000 }));
+  await ana.client.from('obligations').upsert(protectedBill({ ...mine, name: 'Viejo', amount: 350000, updated_at: now + 1000 }));
 
-  const { data } = await ana.client.from('obligations').select('name, server_updated_at').eq('id', mine.id).single();
-  assert.equal(data.name, 'Nuevo');
+  const { data } = await ana.client.from('obligations').select('*').eq('id', mine.id).single();
+  assert.equal(readBill(data).n, 'Nuevo');
 });
 
 test('el servidor marca cuándo cambió cada fila (para la sincronización)', async () => {

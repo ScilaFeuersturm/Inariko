@@ -8,6 +8,7 @@ import { pendingChanges } from '@/sync/engine';
 import { getDb, notifyDataChanged, openDatabase, USER_TABLES } from './db';
 import { hashPassword, verifyPassword } from './passwordHasher';
 import { clearHousehold } from './household';
+import { clearPrivacySecret, unlockPrivacy, queuePrivacyPassword, flushPrivacyOutbox } from './privacyVault';
 import { clearPremium } from './premium';
 import { deleteSecureItem, getSecureItem, setSecureItem } from './secureStorage';
 import { clearSession, currentUserId, startSession } from './session';
@@ -60,6 +61,9 @@ async function onSignedIn(user: SupabaseUser, password?: string): Promise<void> 
      ON CONFLICT(user_id) DO UPDATE SET email = excluded.email`,
     user.id, name, user.email ?? '',
   );
+  if (password) await unlockPrivacy(user.id, password).catch(() => {
+    // El inicio de sesión sigue siendo válido; la pantalla de protección permite reintentar o recuperar.
+  });
   await startSession(user.id);
   // La primera sincronización baja los datos de la cuenta (si ya existían en otro dispositivo).
   await syncNow().catch(() => {});
@@ -136,6 +140,7 @@ async function wipeLocalUserData(): Promise<void> {
     for (const table of USER_TABLES) await db.execAsync(`DELETE FROM ${table}`);
     await db.execAsync('DELETE FROM auth_storage');
   });
+  await clearPrivacySecret();
   await deleteSecureItem(UNLOCK_VERIFIER_KEY);
   await clearSession();
 }
@@ -172,8 +177,14 @@ export async function completeAuthFromLink(code: string): Promise<AuthResult> {
 
 export async function updatePassword(password: string): Promise<AuthResult> {
   try {
+    const userId = currentUserId();
+    if (userId) await queuePrivacyPassword(userId, password);
     const { error } = await supabase.auth.updateUser({ password });
-    if (error) return { ok: false, message: messageFor(error) };
+    if (error) {
+      if (userId) await getDb().runAsync('DELETE FROM privacy_password_outbox WHERE user_id = ?', userId);
+      return { ok: false, message: messageFor(error) };
+    }
+    if (userId) await flushPrivacyOutbox(userId).catch(() => {});
     setSecureItem(UNLOCK_VERIFIER_KEY, await hashPassword(password));
     return { ok: true };
   } catch (error) {

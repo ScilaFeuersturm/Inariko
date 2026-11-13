@@ -3,6 +3,7 @@
 // Verifica: quién puede crear un grupo, invitaciones, el límite de 3 personas, qué se comparte y qué
 // no, quién puede dejar de compartir, el Premium de los integrantes y qué pasa al salir o disolver.
 import assert from 'node:assert/strict';
+import { protectedBill } from './fixtures/privacy.mjs';
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { before, test } from 'node:test';
@@ -35,7 +36,7 @@ async function giveFamilyPlan(user, days = 30) {
 }
 
 function bill(user, overrides = {}) {
-  return {
+  return protectedBill({
     id: randomUUID(),
     user_id: user.id,
     name: 'Luz',
@@ -46,7 +47,7 @@ function bill(user, overrides = {}) {
     created_on: '2026-10-26',
     updated_at: Date.now(),
     ...overrides,
-  };
+  });
 }
 
 const visibleIds = async (user, table = 'obligations') => {

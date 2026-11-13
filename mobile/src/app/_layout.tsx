@@ -75,6 +75,9 @@ function AppStack() {
           <Stack.Screen name="register" />
           <Stack.Screen name="forgot-password" />
         </Stack.Protected>
+        <Stack.Protected guard={state === 'needs_privacy'}>
+          <Stack.Screen name="privacy" />
+        </Stack.Protected>
         <Stack.Protected guard={state === 'onboarding'}>
           <Stack.Screen name="onboarding" />
         </Stack.Protected>
@@ -86,6 +89,8 @@ function AppStack() {
           <Stack.Screen name="profile" />
           <Stack.Screen name="edit-profile" />
           <Stack.Screen name="premium" />
+        </Stack.Protected>
+        <Stack.Protected guard={state !== 'logged_out' && state !== 'loading'}>
           <Stack.Screen name="reset-password" />
         </Stack.Protected>
         {/* Links de los emails: tienen que poder abrirse con o sin sesión. */}

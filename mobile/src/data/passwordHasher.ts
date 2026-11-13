@@ -3,6 +3,8 @@ import { sha1 } from '@noble/hashes/legacy.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { getRandomBytes } from 'expo-crypto';
 
+import { utf8Encode } from '../privacy/crypto';
+
 import NettoCrypto from '../../modules/netto-crypto/src';
 
 /**
@@ -51,7 +53,7 @@ async function derive(
     const hash = algorithm === 'PBKDF2WithHmacSHA256' ? 'SHA256' : 'SHA1';
     return fromBase64(await NettoCrypto.pbkdf2(hash, password, toBase64(salt), iterations, length));
   }
-  return pbkdf2Async(HASHES[algorithm], new TextEncoder().encode(password), salt, { c: iterations, dkLen: length });
+  return pbkdf2Async(HASHES[algorithm], utf8Encode(password), salt, { c: iterations, dkLen: length });
 }
 
 function constantTimeEquals(a: Uint8Array, b: Uint8Array): boolean {
@@ -90,4 +92,10 @@ function fromBase64(text: string): Uint8Array {
     }
   }
   return Uint8Array.from(bytes);
+}
+
+/** PBKDF2 nativo para el sobre de respaldo; parámetro fijo del formato v2. */
+export function deriveVaultPasswordKey(password: string, salt: Uint8Array): Promise<Uint8Array> {
+  if (salt.length !== 16) throw new Error('Sal de respaldo inválida');
+  return derive(password, salt, 600_000, 'PBKDF2WithHmacSHA256');
 }

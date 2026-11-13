@@ -13,6 +13,13 @@ import {
 import { utf8Decode, utf8Encode } from '@/sync/privacy';
 import { sha256 } from '@noble/hashes/sha2.js';
 
+import { publicKey } from '@/privacy/crypto';
+
+jest.mock('expo-crypto', () => ({ getRandomBytes: (n: number) => new Uint8Array(jest.requireActual('node:crypto').randomBytes(n)) }));
+const secret = new Uint8Array(32).fill(7);
+const privacy = { userId: 'b3f1c1d2-2222-4c3d-8e4f-5a6b7c8d0002', secret,
+  recipients: { 'b3f1c1d2-2222-4c3d-8e4f-5a6b7c8d0002': publicKey(secret) } };
+
 const obligations = SYNC_TABLES.find((t) => t.local === 'obligations')!;
 
 test('fechas: días desde 1970 ↔ YYYY-MM-DD', () => {
@@ -49,10 +56,10 @@ test('una factura local se convierte al formato del servidor y vuelve igual', ()
     deleted: 0,
     dirty: 1,
   };
-  const remote = toRemote(obligations, local);
+  const remote = toRemote(obligations, local, privacy);
   expect(remote.household_id).toBe(local.household_id);
   expect(remote).toMatchObject({
-    name: 'Luz***',
+    name: '***',
     amount: 0,
     due_date: '2026-10-20',
     is_recurring: true,
@@ -63,10 +70,10 @@ test('una factura local se convierte al formato del servidor y vuelve igual', ()
   expect(remote).not.toHaveProperty('dirty');
 
   const { dirty: _dirty, ...expected } = local;
-  expect(fromRemote(obligations, { ...remote, server_updated_at: '2026-10-12T00:00:00+00:00' })).toEqual(expected);
+  expect(fromRemote(obligations, { ...remote, server_updated_at: '2026-10-12T00:00:00+00:00' }, privacy)).toEqual(expected);
 });
 
-test('privacidad: trunca a 5 caracteres + *** en el servidor y recupera el original al bajar', () => {
+test('privacidad: oculta por completo el nombre en el servidor y recupera el original al bajar', () => {
   const local = {
     id: '6f0c2a52-1111-4a6b-9d0b-2f0f6a6b0099',
     user_id: 'b3f1c1d2-2222-4c3d-8e4f-5a6b7c8d0002',
@@ -87,13 +94,13 @@ test('privacidad: trunca a 5 caracteres + *** en el servidor y recupera el origi
     deleted: 0,
     dirty: 1,
   };
-  const remote = toRemote(obligations, local);
-  expect(remote.name).toBe('Super***');
-  expect(remote.reference).toBe('FACT-***');
+  const remote = toRemote(obligations, local, privacy);
+  expect(remote.name).toBe('***');
+  expect(remote.reference).toBe('***');
   expect(remote.notes).toBe('***');
   expect(remote.amount).toBe(0);
 
-  const restored = fromRemote(obligations, remote);
+  const restored = fromRemote(obligations, remote, privacy);
   expect(restored.name).toBe('Supermercado mensual');
   expect(restored.reference).toBe('FACT-998877');
   expect(restored.notes).toBe('Compra grande del mes');
@@ -161,7 +168,7 @@ test('privacidad: la app descifra sin TextEncoder/TextDecoder (Hermes)', () => {
   try {
     const local = { id: INCOME_ID, user_id: USER_ID, name: 'Sueldo de Muñoz 💼', amount: 85000000, currency: 'ARS',
       day_of_month: 5, is_recurring: 1, household_id: null, updated_at: 1, deleted: 0 };
-    const { values, decrypted } = fromRemoteWithStatus(incomes, toRemote(incomes, local));
+    const { values, decrypted } = fromRemoteWithStatus(incomes, toRemote(incomes, local, privacy), privacy);
     expect(decrypted).toBe(true);
     expect(values.name).toBe('Sueldo de Muñoz 💼');
     expect(values.amount).toBe(85000000);
@@ -187,8 +194,8 @@ test('privacidad: si no se puede descifrar, se avisa para no pisar los datos loc
 test('privacidad: una copia local ya enmascarada no reemplaza el cifrado real del servidor', () => {
   const masked = { id: INCOME_ID, user_id: USER_ID, name: 'Sueld***', amount: 0, currency: 'ARS',
     day_of_month: 5, is_recurring: 1, household_id: null, updated_at: 1, deleted: 0 };
-  expect(toRemote(incomes, masked)).not.toHaveProperty('encrypted_payload');
-  expect(toRemote(incomes, { ...masked, name: 'Sueldo', amount: 100 })).toHaveProperty('encrypted_payload');
+  expect(() => toRemote(incomes, masked, privacy)).toThrow('recuperarse');
+  expect(toRemote(incomes, { ...masked, name: 'Sueldo', amount: 100 }, privacy)).toHaveProperty('encrypted_payload');
 });
 
 test('utf8: codifica acentos, símbolos y emojis como UTF-8 estándar y vuelve igual', () => {

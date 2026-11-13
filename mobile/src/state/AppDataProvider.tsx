@@ -5,6 +5,7 @@ import { CurrencyConverter, EMPTY_RATES, type ExchangeRates } from '@/domain/cur
 import { defaultBudgetPlan } from '@/domain/models';
 import { openDatabase, subscribeToDataChanges } from '@/data/db';
 import { usePremium } from '@/data/premium';
+import { readPrivacySecret } from '@/data/privacyVault';
 import { readRates, refreshRatesIfStale } from '@/data/rates';
 import { getBudgetPlan, getIncomes, getObligations, getPaymentHistory, getUser } from '@/data/repository';
 import { currentUserId } from '@/data/session';
@@ -17,7 +18,7 @@ import { scheduleSync, syncNow } from '@/sync/scheduler';
  * En qué parte de la app está el usuario: sin sesión, bajando por primera vez los datos de su cuenta
  * en este teléfono (o esperando conexión para hacerlo), configurando su cuenta o usando la app.
  */
-export type AppState = 'loading' | 'logged_out' | 'syncing' | 'needs_connection' | 'onboarding' | 'ready';
+export type AppState = 'loading' | 'logged_out' | 'syncing' | 'needs_connection' | 'onboarding' | 'ready' | 'needs_privacy';
 
 type AppDataContextValue = UserData & {
   state: AppState;
@@ -82,6 +83,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         setData({ ...EMPTY_DATA, state: 'logged_out', rates, retryInitialSync });
         return;
       }
+      const privacySecret = readPrivacySecret(userId);
+      if (!privacySecret) {
+        setData({ ...EMPTY_DATA, state: 'needs_privacy', user, rates, retryInitialSync });
+        return;
+      }
+      privacySecret.fill(0);
       if (!plan && !(await hasSyncedOnce(userId))) {
         // Teléfono nuevo para esta cuenta: hay que bajar sus datos antes de decidir si falta el
         // onboarding (si no, un onboarding nuevo pisaría la configuración real de la cuenta).

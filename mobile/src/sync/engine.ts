@@ -1,10 +1,11 @@
 import { getDb } from '@/data/db';
+import { privacyContext } from '@/data/privacyVault';
 import { supabase } from '@/data/supabase';
 
+import type { PrivacyContext } from './privacy';
 import {
   fromRemoteWithStatus,
   parseServerTimestamp,
-  sensitiveColumnsOf,
   SHARED_TABLES,
   shouldApplyRemote,
   SYNC_TABLES,
@@ -41,21 +42,43 @@ const isShared = (table: SyncTable) => SHARED_TABLES.includes(table.local);
 
 /** Sube los cambios pendientes y baja los del servidor, tabla por tabla. */
 export async function runSync(userId: string): Promise<SyncResult> {
-  let pushed = 0;
-  let pulled = 0;
-  for (const table of SYNC_TABLES) {
-    pushed += await push(table, userId);
-  }
-  for (const table of SYNC_TABLES) {
-    pulled += await pull(table, userId);
-  }
-  for (const table of SYNC_TABLES) {
-    if (isShared(table)) pulled += await dropUnreachableRows(table, userId);
-  }
-  return { pushed, pulled };
+  const privacy = await privacyContext(userId);
+  try {
+    let pushed = 0;
+    let pulled = 0;
+    // Elimina copias de exintegrantes antes de intentar cifrarlas o subir sus cambios pendientes.
+    for (const table of SYNC_TABLES.filter(isShared)) pulled += await dropUnreachableRows(table, userId);
+    const fingerprint = JSON.stringify(Object.entries(privacy.recipients).sort(([a], [b]) => a.localeCompare(b)));
+    const state = await getDb().getFirstAsync<{ recipients: string }>(
+      'SELECT recipients FROM privacy_sync_state WHERE user_id = ?', userId);
+    if (state?.recipients !== fingerprint) {
+      // Migra v1 y vuelve a sellar para la membresía actual. Nunca recifra una máscara como original.
+      for (const table of SYNC_TABLES.filter(isShared)) {
+        const name = table.local === 'payment_history' ? 'obligation_name' : 'name';
+        const masked = `(amount = 0 AND length(${name}) <= 8 AND substr(${name}, -3) = '***')`;
+        await getDb().runAsync(`UPDATE ${table.local} SET dirty = 0 WHERE user_id = ? AND ${masked}`, userId);
+      }
+      await resetSharedCursors(userId);
+      for (const table of SYNC_TABLES) pulled += await pull(table, userId, privacy);
+      // Después de bajar: el pull puede haber dejado las filas en dirty=0. Deben volver a cifrarse
+      // para los destinatarios actuales aunque no haya cambiado el importe ni updated_at.
+      for (const table of SYNC_TABLES.filter(isShared)) {
+        await getDb().runAsync(`UPDATE ${table.local} SET dirty = 1 WHERE user_id = ?`, userId);
+      }
+    }
+    for (const table of SYNC_TABLES) pushed += await push(table, userId, privacy);
+    for (const table of SYNC_TABLES) pulled += await pull(table, userId, privacy);
+    // Las filas v1 recuperadas se migran antes de marcar este ciclo como completo.
+    for (const table of SYNC_TABLES.filter(isShared)) pushed += await push(table, userId, privacy);
+    for (const table of SYNC_TABLES) {
+      if (isShared(table)) pulled += await dropUnreachableRows(table, userId);
+    }
+    await getDb().runAsync('INSERT OR REPLACE INTO privacy_sync_state (user_id, recipients) VALUES (?, ?)', userId, fingerprint);
+    return { pushed, pulled };
+  } finally { privacy.secret.fill(0); }
 }
 
-async function push(table: SyncTable, userId: string): Promise<number> {
+async function push(table: SyncTable, userId: string, privacy: PrivacyContext): Promise<number> {
   const db = getDb();
   let total = 0;
   for (;;) {
@@ -69,7 +92,7 @@ async function push(table: SyncTable, userId: string): Promise<number> {
     const own = rows.filter((row) => row.user_id === userId);
     const others = rows.filter((row) => row.user_id !== userId);
     if (own.length > 0) {
-      const { error } = await supabase.from(table.remote).upsert(own.map((row) => toRemote(table, row)), {
+      const { error } = await supabase.from(table.remote).upsert(own.map((row) => toRemote(table, row, privacy)), {
         onConflict: table.primaryKey,
       });
       if (error) throw asSyncError(error, `No se pudo subir ${table.remote}`);
@@ -79,7 +102,7 @@ async function push(table: SyncTable, userId: string): Promise<number> {
       const id = row[table.primaryKey] as string;
       const { data, error } = await supabase
         .from(table.remote)
-        .update(toRemote(table, row))
+        .update(toRemote(table, row, privacy))
         .eq(table.primaryKey, id)
         .select(table.primaryKey);
       if (error) throw asSyncError(error, `No se pudo subir ${table.remote}`);
@@ -99,7 +122,7 @@ async function push(table: SyncTable, userId: string): Promise<number> {
   }
 }
 
-async function pull(table: SyncTable, userId: string): Promise<number> {
+async function pull(table: SyncTable, userId: string, privacy: PrivacyContext): Promise<number> {
   const db = getDb();
   const state = await db.getFirstAsync<{ cursor: string }>(
     'SELECT cursor FROM sync_state WHERE user_id = ? AND table_name = ?',
@@ -125,15 +148,17 @@ async function pull(table: SyncTable, userId: string): Promise<number> {
           remote[table.primaryKey] as string,
         );
         if (!shouldApplyRemote(local, Number(remote.updated_at))) continue;
-        const { values, decrypted } = fromRemoteWithStatus(table, remote);
-        // Si el nombre y el monto no se pudieron descifrar, en el servidor solo están enmascarados
-        // ("Sueld***", $0): se conservan los valores reales que ya hay en este teléfono.
-        const sensitive = decrypted ? [] : sensitiveColumnsOf(table);
-        const updatable = columns.filter((c) => !sensitive.includes(c));
+        const { values, decrypted } = fromRemoteWithStatus(table, remote, privacy);
+        // No incorporar máscaras como datos reales ni avanzar el cursor: una descarga posterior
+        // debe poder recuperar la fila cuando su contenido cifrado vuelva a estar disponible.
+        if (!decrypted) {
+          throw new SyncError('No se pudieron recuperar los datos financieros. Volvé a sincronizar.', false);
+        }
+        const dirty = remote.user_id === userId && String(remote.encrypted_payload ?? '').startsWith('v1:') ? 1 : 0;
         // Solo se pisan las columnas sincronizadas (por ejemplo, el email local del perfil se conserva).
         await db.runAsync(
-          `INSERT INTO ${table.local} (${columns.join(', ')}, dirty) VALUES (${columns.map(() => '?').join(', ')}, 0)
-           ON CONFLICT(${table.primaryKey}) DO UPDATE SET ${updatable.map((c) => `${c} = excluded.${c}`).join(', ')}, dirty = 0`,
+          `INSERT INTO ${table.local} (${columns.join(', ')}, dirty) VALUES (${columns.map(() => '?').join(', ')}, ${dirty})
+           ON CONFLICT(${table.primaryKey}) DO UPDATE SET ${columns.map((c) => `${c} = excluded.${c}`).join(', ')}, dirty = excluded.dirty`,
           ...columns.map((c) => values[c] as string | number | null),
         );
       }
@@ -212,5 +237,6 @@ export async function pendingChanges(userId: string): Promise<number> {
     );
     total += row?.n ?? 0;
   }
-  return total;
+  const pendingVault = await getDb().getFirstAsync<{ n: number }>('SELECT count(*) AS n FROM privacy_password_outbox WHERE user_id = ?', userId);
+  return total + (pendingVault?.n ?? 0);
 }

@@ -140,3 +140,10 @@ Quién tiene Premium lo decide el servidor (tabla `entitlements`, que los usuari
 La app la consulta en cada sincronización y guarda una copia para funcionar sin conexión.
 Las compras (RevenueCat) todavía no están conectadas: la pantalla de planes muestra los precios
 (2,99 USD por mes, 19,99 USD por año, 7 días de prueba) con el botón desactivado.
+
+## Privacidad y recuperación
+
+El formato v2 cifra los datos financieros antes de enviarlos al servidor y permite recuperar
+la cuenta con la contraseña o con soporte, cuya clave privada se custodia fuera del backend.
+Ver [`../documentacion/cifrado-y-recuperacion.md`](../documentacion/cifrado-y-recuperacion.md)
+para la migración, el plan familiar, la herramienta offline y el orden del lanzamiento.

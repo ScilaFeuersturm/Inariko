@@ -118,6 +118,11 @@ const MIGRATIONS: string[] = [
   `
   DELETE FROM sync_state WHERE table_name IN ('incomes', 'obligations', 'payment_history');
   `,
+  `
+  CREATE TABLE privacy_sync_state (user_id TEXT PRIMARY KEY NOT NULL, recipients TEXT NOT NULL);
+  CREATE TABLE privacy_password_outbox (user_id TEXT PRIMARY KEY NOT NULL, box TEXT NOT NULL);
+  DELETE FROM sync_state WHERE table_name IN ('incomes', 'obligations', 'payment_history');
+  `,
 ];
 
 let database: SQLite.SQLiteDatabase | null = null;
@@ -187,7 +192,7 @@ export function getDb(): SQLite.SQLiteDatabase {
 }
 
 /** Tablas con datos del usuario (se vacían al cerrar sesión; vuelven con la sincronización). */
-export const USER_TABLES = ['profile', 'budget_plan', 'incomes', 'obligations', 'payment_history', 'sync_state'] as const;
+export const USER_TABLES = ['profile', 'budget_plan', 'incomes', 'obligations', 'payment_history', 'sync_state', 'privacy_sync_state', 'privacy_password_outbox'] as const;
 
 // ---- Aviso de cambios: las pantallas recargan sus datos cuando algo se escribe ----
 

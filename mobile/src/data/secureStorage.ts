@@ -27,7 +27,7 @@ export async function deleteSecureItem(key: string): Promise<void> {
 const DATABASE_KEY = 'database_key';
 const INSTALL_MARKER = 'install_marker';
 /** Todo lo que se guarda en el Keychain/Keystore; ver resetSecureStateOnFreshInstall. */
-const ALL_SECURE_KEYS = [DATABASE_KEY, 'session_user_id', 'lock_last_active_at', 'lock_biometric_unlock'];
+const ALL_SECURE_KEYS = [DATABASE_KEY, 'privacy_vault_v2', 'unlock_verifier', 'session_user_id', 'lock_last_active_at', 'lock_biometric_unlock'];
 
 /**
  * En iOS el Keychain sobrevive a la desinstalación de la app. En la primera ejecución después de

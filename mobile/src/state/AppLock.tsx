@@ -65,7 +65,7 @@ async function detectBiometrics(): Promise<Biometrics> {
  * en la vista previa del selector de apps.
  */
 export function AppLockProvider({ sessionState, children }: { sessionState: SessionState; children: ReactNode }) {
-  const loggedIn = sessionState === 'ready' || sessionState === 'onboarding';
+  const loggedIn = sessionState === 'ready' || sessionState === 'onboarding' || sessionState === 'needs_privacy';
   // Al abrir la app con una sesión guardada se revisa cuánto pasó desde el último uso.
   const [locked, setLocked] = useState(() => currentUserId() != null && shouldLock(readLastActive(), Date.now()));
   const [covered, setCovered] = useState(false);
